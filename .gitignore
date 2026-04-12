@@ -1,0 +1,43 @@
+# ─── Environments ────────────────────────
+venv/
+.venv/
+__pycache__/
+*.pyc
+.runtime/
+.crewai-home/
+
+# ─── Databases ───────────────────────────
+# Active operational DB (auto-created at runtime)
+datasets/ops.db
+datasets/ops.db.bak
+datasets/ops.db-shm
+datasets/ops.db-wal
+datasets/vuln_lookup.db
+datasets/vuln_lookup.db-shm
+datasets/vuln_lookup.db-wal
+datasets/epss_scores.json
+datasets/nvd/
+datasets/exploitdb/
+datasets/cpe/
+datasets/.DS_Store
+
+# Stale DB files from old path — superseded by datasets/ops.db
+backend/app.db
+backend/vulnpilot.db
+app.db
+legacy/obsolete-state/*.db
+
+# KEV catalog cache — auto-refreshed by scanner, no need to commit
+datasets/kev.json
+
+# Project-local paper/export artifacts not needed in source repo
+capstone_paper_revised.docx
+
+# ─── IDE ─────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ─── OS ──────────────────────────────────
+.DS_Store
+Thumbs.db

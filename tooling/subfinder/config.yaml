@@ -1,0 +1,4 @@
+# Workspace-local subfinder config for VulnPilot.
+# The scanner passes this explicitly so passive recon does not depend on
+# per-user config files under ~/Library/Application Support/subfinder.
+

@@ -1,0 +1,20 @@
+# ── Core API framework ────────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.4.0
+python-multipart
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy>=2.0.0
+aiosqlite
+
+# ── Security intelligence ────────────────────────────────────────────────────
+requests>=2.31.0
+nvdlib>=0.7.7
+python-nmap>=0.7.1
+
+# ── Agent orchestration (CrewAI / LangChain) ─────────────────────────────────
+# crewai 1.x requires Python 3.13 (use .venv, not venv/).
+# Activate via USE_CREWAI=true environment variable.
+crewai>=1.0.0
+langchain-core>=1.0.0

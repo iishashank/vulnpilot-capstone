@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-04-09T07:16:46",
+  "mode": "CrewAI",
+  "scenario": {
+    "host": "127.0.0.1",
+    "profile": "__evaluation__",
+    "ports": {
+      "baseline": [
+        8000
+      ],
+      "changed": [
+        8000,
+        8080
+      ]
+    },
+    "baseline_banner": "nginx/1.25.0",
+    "changed_banner": "Apache/2.4.49"
+  },
+  "metrics": {
+    "scan_success_rate": 100.0,
+    "vulnerability_correlation_precision": 100.0,
+    "drift_detection_precision": 100.0,
+    "drift_detection_recall": 100.0,
+    "drift_detection_f1": 100.0,
+    "alert_deduplication_rate": 100.0,
+    "prioritization_quality": 100.0,
+    "explainability_score": 100.0
+  },
+  "evidence": {
+    "expected_cves": [
+      "CVE-2021-41524",
+      "CVE-2021-41773",
+      "CVE-2021-42013"
+    ],
+    "baseline_findings": [],
+    "changed_findings": [
+      "CVE-2021-41524",
+      "CVE-2021-41773",
+      "CVE-2021-42013"
+    ],
+    "drift_after_second_run": {
+      "run_a": "5513b7b4-bc9d-4d07-9630-0f398109bcdf",
+      "run_b": "a68bf21e-bc1d-46fc-aaf1-dc4e771b01c2",
+      "new_findings": [
+        "CVE-2021-41524",
+        "CVE-2021-41773",
+        "CVE-2021-42013"
+      ],
+      "resolved_findings": [],
+      "port_changes": [
+        {
+          "host": "127.0.0.1",
+          "old": [
+            8000
+          ],
+          "new": [
+            8000,
+            8080
+          ]
+        }
+      ]
+    },
+    "alert_types": [
+      "new_critical",
+      "new_high",
+      "port_change"
+    ],
+    "sample_explanation": {
+      "plain_title": "In plain English: CVE-2021-41773 affects a detected web server.",
+      "plain_summary": "The platform found a known vulnerability linked to a web server running in the scanned environment. It currently appears on one detected asset.",
+      "why_it_matters": "This could lead to a serious compromise if the affected service is reachable. It is also listed in CISA's Known Exploited Vulnerabilities catalog, which means it is known to be abused in real attacks.",
+      "priority_reason": "Priority is critical based on the stored CVSS score of 9.8. KEV status raises urgency because this is not only theoretical risk.",
+      "business_impact_label": "Service Disruption",
+      "business_impact_reason": "The affected service is externally reachable or application-facing, so exploitation could cause visible service disruption or unauthorized access.",
+      "recommended_next_step": "A non-technical owner should escalate this quickly: identify who owns the affected system, reduce unnecessary exposure if possible, and prioritize patching or version correction."
+    }
+  },
+  "notes": [
+    "Vulnerability Correlation Precision is measured against a controlled Apache 2.4.49 banner mapped to the local vulnerability database.",
+    "Drift metrics are computed over seeded changes only: newly introduced Apache CVEs and one newly opened monitored port.",
+    "Explainability Score is currently a deterministic coverage proxy based on whether all plain-language explanation fields are generated."
+  ]
+}
