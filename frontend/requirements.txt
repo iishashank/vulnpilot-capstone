@@ -3,3 +3,4 @@ dash-bootstrap-components
 plotly
 requests
 pandas
+reportlab

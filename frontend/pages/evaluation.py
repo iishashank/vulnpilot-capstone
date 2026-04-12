@@ -2,10 +2,13 @@
 Evaluation — controlled validation metrics and explainability coverage.
 """
 
+import json
+
 import requests
 import dash
 import dash_bootstrap_components as dbc
 from dash import html, dcc, Input, Output, ctx
+from dash.exceptions import PreventUpdate
 
 from frontend.config import API_BASE_URL, API_REQUEST_HEADERS
 
@@ -82,6 +85,7 @@ def _metric_cards(metrics: dict, explainability_label: str) -> list:
 layout = dbc.Container(
     [
         dcc.Interval(id="eval-tick", interval=10000, n_intervals=0),
+        dcc.Download(id="eval-download"),
         page_header(
             "Evaluation and trust metrics",
             "Inspect controlled validation scores, live operational metrics, and the plain-language explainability layer used for non-technical reviewers.",
@@ -93,6 +97,13 @@ layout = dbc.Container(
                 pill("Explainability visible", "success"),
             ],
             actions=[
+                dbc.Button(
+                    [html.I(className="bi bi-download me-2"), "Download validation JSON"],
+                    id="eval-download-btn",
+                    color="secondary",
+                    outline=True,
+                    className="vp-action-button",
+                ),
                 dbc.Button(
                     [html.I(className="bi bi-play-circle me-2"), "Run controlled evaluation"],
                     id="eval-run-btn",
@@ -356,3 +367,17 @@ def refresh_evaluation(_tick, run_clicks):
         )
 
     return status_parts, validation_cards, operational_cards, methodology, explainability
+
+
+@dash.callback(
+    Output("eval-download", "data"),
+    Input("eval-download-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def download_validation_json(_clicks):
+    snapshot = requests.get(f"{API}/evaluation/metrics", timeout=5).json()
+    validation = snapshot.get("validation")
+    if not validation:
+        raise PreventUpdate
+    generated = str(validation.get("generated_at", "latest")).replace(":", "-")
+    return dcc.send_string(json.dumps(validation, indent=2), f"vulnpilot-evaluation-{generated}.json")
