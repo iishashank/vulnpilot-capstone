@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-09T07:16:46",
+  "generated_at": "2026-04-14T14:22:40",
   "mode": "CrewAI",
   "scenario": {
     "host": "127.0.0.1",
@@ -19,9 +19,13 @@
   "metrics": {
     "scan_success_rate": 100.0,
     "vulnerability_correlation_precision": 100.0,
+    "vulnerability_correlation_false_positive_rate": 0.0,
     "drift_detection_precision": 100.0,
     "drift_detection_recall": 100.0,
     "drift_detection_f1": 100.0,
+    "port_change_detection_precision": 100.0,
+    "port_change_detection_recall": 100.0,
+    "mean_time_to_detect_seconds": 0.45,
     "alert_deduplication_rate": 100.0,
     "prioritization_quality": 100.0,
     "explainability_score": 100.0
@@ -32,6 +36,7 @@
       "CVE-2021-41773",
       "CVE-2021-42013"
     ],
+    "false_positive_cves": [],
     "baseline_findings": [],
     "changed_findings": [
       "CVE-2021-41524",
@@ -39,8 +44,8 @@
       "CVE-2021-42013"
     ],
     "drift_after_second_run": {
-      "run_a": "5513b7b4-bc9d-4d07-9630-0f398109bcdf",
-      "run_b": "a68bf21e-bc1d-46fc-aaf1-dc4e771b01c2",
+      "run_a": "1b4f81d0-c633-4bb2-b741-4c0b8a82063e",
+      "run_b": "8c193a77-bb85-4e84-befe-967766ff3495",
       "new_findings": [
         "CVE-2021-41524",
         "CVE-2021-41773",
@@ -60,11 +65,77 @@
         }
       ]
     },
+    "change_introduced_at": "2026-04-14T14:22:38.133",
+    "first_alert_created_at": "2026-04-14T14:22:38.584",
     "alert_types": [
       "new_critical",
       "new_high",
       "port_change"
     ],
+    "stage_latency_breakdown": {
+      "summary": {
+        "recon_seconds": {
+          "mean_seconds": 0.007,
+          "std_seconds": 0.003,
+          "samples": 3
+        },
+        "scan_seconds": {
+          "mean_seconds": 0.004,
+          "std_seconds": 0.001,
+          "samples": 3
+        },
+        "vulnerability_seconds": {
+          "mean_seconds": 0.039,
+          "std_seconds": 0.025,
+          "samples": 3
+        },
+        "diff_seconds": {
+          "mean_seconds": 0.002,
+          "std_seconds": 0.0,
+          "samples": 3
+        },
+        "total_pipeline_seconds": {
+          "mean_seconds": 0.052,
+          "std_seconds": 0.03,
+          "samples": 3
+        }
+      },
+      "per_run": {
+        "1b4f81d0-c633-4bb2-b741-4c0b8a82063e": {
+          "recon_seconds": 0.004,
+          "scan_seconds": 0.002,
+          "vulnerability_seconds": 0.008,
+          "diff_seconds": 0.002,
+          "total_pipeline_seconds": 0.016
+        },
+        "8c193a77-bb85-4e84-befe-967766ff3495": {
+          "recon_seconds": 0.011,
+          "scan_seconds": 0.005,
+          "vulnerability_seconds": 0.07,
+          "diff_seconds": 0.003,
+          "total_pipeline_seconds": 0.089
+        },
+        "d33c577d-3d07-4c39-8237-f89227368936": {
+          "recon_seconds": 0.005,
+          "scan_seconds": 0.005,
+          "vulnerability_seconds": 0.039,
+          "diff_seconds": 0.002,
+          "total_pipeline_seconds": 0.05
+        }
+      }
+    },
+    "explainability_by_severity": {
+      "CRITICAL": {
+        "total_findings": 2,
+        "complete_explanations": 2,
+        "coverage": 100.0
+      },
+      "HIGH": {
+        "total_findings": 1,
+        "complete_explanations": 1,
+        "coverage": 100.0
+      }
+    },
     "sample_explanation": {
       "plain_title": "In plain English: CVE-2021-41773 affects a detected web server.",
       "plain_summary": "The platform found a known vulnerability linked to a web server running in the scanned environment. It currently appears on one detected asset.",
@@ -78,6 +149,9 @@
   "notes": [
     "Vulnerability Correlation Precision is measured against a controlled Apache 2.4.49 banner mapped to the local vulnerability database.",
     "Drift metrics are computed over seeded changes only: newly introduced Apache CVEs and one newly opened monitored port.",
+    "Vulnerability Correlation False Positive Rate is reported over emitted matches in the seeded scenario because the harness does not define a full real-world negative universe.",
+    "Mean Time to Detect measures the elapsed time between introducing the changed service state and persisting the first alert for that changed run.",
+    "Stage latency values are derived from timestamped ScanLog events and averaged across the controlled runs.",
     "Explainability Score is currently a deterministic coverage proxy based on whether all plain-language explanation fields are generated."
   ]
 }

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from statistics import mean, pstdev
 from typing import Any
 
 from .db import SessionLocal
@@ -212,6 +213,32 @@ def _explainability_coverage(findings: list[dict[str, Any]]) -> float:
     return _safe_pct(covered, len(findings))
 
 
+def _explainability_by_severity(findings: list[dict[str, Any]]) -> dict[str, dict[str, float | int]]:
+    breakdown: dict[str, dict[str, float | int]] = {}
+    for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        bucket = [finding for finding in findings if str(finding.get("severity", "")).upper() == severity]
+        if not bucket:
+            continue
+        complete = 0
+        for finding in bucket:
+            explanation = explain_finding(finding)
+            if all(str(explanation.get(field, "")).strip() for field in _EXPLAINABILITY_FIELDS):
+                complete += 1
+        breakdown[severity] = {
+            "total_findings": len(bucket),
+            "complete_explanations": complete,
+            "coverage": _safe_pct(complete, len(bucket)),
+        }
+    return breakdown
+
+
+def _reported_match_false_positive_rate(reported: set[str], expected: set[str]) -> float:
+    if not reported:
+        return 0.0
+    false_positives = reported - expected
+    return _safe_pct(len(false_positives), len(reported))
+
+
 def _prioritization_quality(findings: list[dict[str, Any]]) -> float:
     if not findings:
         return 0.0
@@ -281,6 +308,7 @@ def _compute_operational_metrics(db) -> dict[str, Any]:
         "alert_deduplication_rate": _alert_dedup_rate(alerts),
         "prioritization_quality": _prioritization_quality(findings),
         "explainability_score": _explainability_coverage(findings),
+        "explainability_by_severity": _explainability_by_severity(findings),
         "finding_count": len(findings),
         "alert_count": len(alerts),
     }
@@ -337,6 +365,68 @@ def _cleanup_evaluation_site(site_id: str) -> None:
         db.close()
 
 
+def _first_timestamp(rows: list[ScanLog], patterns: tuple[str, ...]) -> datetime | None:
+    for row in rows:
+        message = row.message or ""
+        if any(pattern in message for pattern in patterns):
+            return row.ts
+    return None
+
+
+def _stage_latencies_for_run(run_id: str, db) -> dict[str, float]:
+    rows = (
+        db.query(ScanLog)
+        .filter(ScanLog.run_id == run_id)
+        .order_by(ScanLog.ts.asc(), ScanLog.id.asc())
+        .all()
+    )
+    if not rows:
+        return {}
+
+    recon_start = _first_timestamp(rows, ("Recon Agent [CrewAI]: starting scope expansion.", "Orchestrator started"))
+    scan_start = _first_timestamp(rows, ("Scanner Agent [CrewAI]: starting service enumeration.", "Scan Agent:"))
+    vuln_start = _first_timestamp(rows, ("Vulnerability Agent [CrewAI]: starting CVE correlation.", "Vulnerability Agent:"))
+    diff_start = _first_timestamp(rows, ("Diff Agent [CrewAI]: starting drift comparison.", "Diff Agent:"))
+    report_end = _first_timestamp(rows, ("Report Agent [CrewAI]: run complete", "Report Agent: run completed successfully."))
+
+    def _delta_seconds(start: datetime | None, end: datetime | None) -> float | None:
+        if not start or not end:
+            return None
+        return round(max((end - start).total_seconds(), 0.0), 3)
+
+    values = {
+        "recon_seconds": _delta_seconds(recon_start, scan_start),
+        "scan_seconds": _delta_seconds(scan_start, vuln_start),
+        "vulnerability_seconds": _delta_seconds(vuln_start, diff_start),
+        "diff_seconds": _delta_seconds(diff_start, report_end),
+        "total_pipeline_seconds": _delta_seconds(recon_start, report_end),
+    }
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def _stage_latency_breakdown(run_ids: list[str], db) -> dict[str, Any]:
+    per_run: dict[str, dict[str, float]] = {}
+    stage_samples: dict[str, list[float]] = {}
+
+    for run_id in run_ids:
+        latencies = _stage_latencies_for_run(run_id, db)
+        if not latencies:
+            continue
+        per_run[run_id] = latencies
+        for stage, seconds in latencies.items():
+            stage_samples.setdefault(stage, []).append(seconds)
+
+    summary = {}
+    for stage, samples in stage_samples.items():
+        summary[stage] = {
+            "mean_seconds": round(mean(samples), 3),
+            "std_seconds": round(pstdev(samples), 3) if len(samples) > 1 else 0.0,
+            "samples": len(samples),
+        }
+
+    return {"summary": summary, "per_run": per_run}
+
+
 def _run_controlled_evaluation() -> None:
     original_ports = PROFILE_PORTS.get(_EVAL_PROFILE)
     original_timeout = PROFILE_TIMEOUTS.get(_EVAL_PROFILE)
@@ -386,6 +476,7 @@ def _run_controlled_evaluation() -> None:
         servers.pop().close()
         time.sleep(0.5)
 
+        change_introduced_at = datetime.utcnow()
         servers.append(_start_server(primary_port, "Apache/2.4.49"))
         servers.append(_start_server(extra_port, "Apache/2.4.49"))
         time.sleep(0.35)
@@ -413,6 +504,7 @@ def _run_controlled_evaluation() -> None:
             alerts_after_second = db.query(Alert).filter(Alert.site_id == site_id).all()
             run1_findings = db.query(Finding).filter(Finding.run_id == run_ids[0]).all()
             run2_findings_rows = db.query(Finding).filter(Finding.run_id == run_ids[1]).all()
+            stage_breakdown = _stage_latency_breakdown(run_ids[:2], db)
         finally:
             db.close()
 
@@ -440,6 +532,7 @@ def _run_controlled_evaluation() -> None:
         try:
             runs = [db.query(ScanRun).filter(ScanRun.run_id == run_id).first() for run_id in run_ids]
             all_alerts = db.query(Alert).filter(Alert.site_id == site_id).all()
+            stage_breakdown = _stage_latency_breakdown(run_ids, db)
         finally:
             db.close()
 
@@ -461,6 +554,7 @@ def _run_controlled_evaluation() -> None:
         }
         run2_cves = {row["cve_id"] for row in run2_findings["rows"]}
         true_positive_cves = run2_cves & expected_cves
+        false_positive_cves = run2_cves - expected_cves
 
         actual_changes = {f"finding:{cve_id}" for cve_id in expected_cves}
         actual_changes.add("port_change")
@@ -473,8 +567,31 @@ def _run_controlled_evaluation() -> None:
         drift_recall = _safe_pct(drift_tp, len(actual_changes))
         drift_f1 = _f1(drift_precision, drift_recall)
 
+        actual_port_changes = {
+            (
+                _EVAL_HOST,
+                tuple(sorted([primary_port])),
+                tuple(sorted([primary_port, extra_port])),
+            )
+        }
+        reported_port_changes = {
+            (
+                str(change.get("host")),
+                tuple(sorted(int(port) for port in change.get("old", []))),
+                tuple(sorted(int(port) for port in change.get("new", []))),
+            )
+            for change in diff_after_second.get("port_changes", [])
+        }
+        port_change_tp = len(actual_port_changes & reported_port_changes)
+        port_change_precision = _safe_pct(port_change_tp, len(reported_port_changes)) if reported_port_changes else 0.0
+        port_change_recall = _safe_pct(port_change_tp, len(actual_port_changes))
+
+        first_alert_time = min((alert.created_at for alert in alerts_after_second if alert.created_at), default=None)
+        mttd_seconds = round(max((first_alert_time - change_introduced_at).total_seconds(), 0.0), 3) if first_alert_time else None
+
         validation_findings = run2_findings["rows"]
         explainability_score = _explainability_coverage(validation_findings)
+        explainability_by_severity = _explainability_by_severity(validation_findings)
         sample_explanation = explain_finding(validation_findings[0]) if validation_findings else {}
 
         validation = {
@@ -490,24 +607,36 @@ def _run_controlled_evaluation() -> None:
             "metrics": {
                 "scan_success_rate": _safe_pct(sum(1 for run in runs if run and run.status == "done"), len(runs)),
                 "vulnerability_correlation_precision": _safe_pct(len(true_positive_cves), len(run2_cves)),
+                "vulnerability_correlation_false_positive_rate": _reported_match_false_positive_rate(run2_cves, expected_cves),
                 "drift_detection_precision": drift_precision,
                 "drift_detection_recall": drift_recall,
                 "drift_detection_f1": drift_f1,
+                "port_change_detection_precision": port_change_precision,
+                "port_change_detection_recall": port_change_recall,
+                "mean_time_to_detect_seconds": mttd_seconds,
                 "alert_deduplication_rate": _alert_dedup_rate(all_alerts),
                 "prioritization_quality": _prioritization_quality(validation_findings),
                 "explainability_score": explainability_score,
             },
             "evidence": {
                 "expected_cves": sorted(expected_cves),
+                "false_positive_cves": sorted(false_positive_cves),
                 "baseline_findings": sorted({row.cve_id for row in run1_findings}),
                 "changed_findings": sorted(run2_cves),
                 "drift_after_second_run": diff_after_second,
+                "change_introduced_at": change_introduced_at.isoformat(timespec="milliseconds"),
+                "first_alert_created_at": first_alert_time.isoformat(timespec="milliseconds") if first_alert_time else "",
                 "alert_types": sorted({alert.trigger_type for alert in alerts_after_second}),
+                "stage_latency_breakdown": stage_breakdown,
+                "explainability_by_severity": explainability_by_severity,
                 "sample_explanation": sample_explanation,
             },
             "notes": [
                 "Vulnerability Correlation Precision is measured against a controlled Apache 2.4.49 banner mapped to the local vulnerability database.",
                 "Drift metrics are computed over seeded changes only: newly introduced Apache CVEs and one newly opened monitored port.",
+                "Vulnerability Correlation False Positive Rate is reported over emitted matches in the seeded scenario because the harness does not define a full real-world negative universe.",
+                "Mean Time to Detect measures the elapsed time between introducing the changed service state and persisting the first alert for that changed run.",
+                "Stage latency values are derived from timestamped ScanLog events and averaged across the controlled runs.",
                 "Explainability Score is currently a deterministic coverage proxy based on whether all plain-language explanation fields are generated.",
             ],
         }

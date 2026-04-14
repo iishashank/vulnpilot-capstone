@@ -29,13 +29,23 @@ def _fmt_pct(value):
     return f"{float(value):.2f}%"
 
 
+def _fmt_seconds(value):
+    if value is None:
+        return "—"
+    return f"{float(value):.3f}s"
+
+
 def _metric_cards(metrics: dict, explainability_label: str) -> list:
     tone_map = {
         "scan_success_rate": "primary",
         "vulnerability_correlation_precision": "danger",
+        "vulnerability_correlation_false_positive_rate": "success",
         "drift_detection_precision": "warning",
         "drift_detection_recall": "info",
         "drift_detection_f1": "success",
+        "port_change_detection_precision": "warning",
+        "port_change_detection_recall": "info",
+        "mean_time_to_detect_seconds": "primary",
         "alert_deduplication_rate": "primary",
         "prioritization_quality": "warning",
         "explainability_score": "success",
@@ -43,9 +53,13 @@ def _metric_cards(metrics: dict, explainability_label: str) -> list:
     icon_map = {
         "scan_success_rate": "bi-check2-circle",
         "vulnerability_correlation_precision": "bi-bug",
+        "vulnerability_correlation_false_positive_rate": "bi-bug-fill",
         "drift_detection_precision": "bi-crosshair2",
         "drift_detection_recall": "bi-arrow-repeat",
         "drift_detection_f1": "bi-broadcast-pin",
+        "port_change_detection_precision": "bi-ethernet",
+        "port_change_detection_recall": "bi-plug",
+        "mean_time_to_detect_seconds": "bi-stopwatch",
         "alert_deduplication_rate": "bi-bell-slash",
         "prioritization_quality": "bi-sort-down",
         "explainability_score": "bi-chat-square-text",
@@ -53,19 +67,30 @@ def _metric_cards(metrics: dict, explainability_label: str) -> list:
     label_map = {
         "scan_success_rate": "Scan Success Rate",
         "vulnerability_correlation_precision": "Correlation Precision",
+        "vulnerability_correlation_false_positive_rate": "Correlation FPR",
         "drift_detection_precision": "Drift Precision",
         "drift_detection_recall": "Drift Recall",
         "drift_detection_f1": "Drift F1",
+        "port_change_detection_precision": "Port Precision",
+        "port_change_detection_recall": "Port Recall",
+        "mean_time_to_detect_seconds": "MTTD",
         "alert_deduplication_rate": "Alert Dedup Rate",
         "prioritization_quality": "Prioritization Quality",
         "explainability_score": explainability_label,
     }
+    formatter_map = {
+        "mean_time_to_detect_seconds": _fmt_seconds,
+    }
     ordered_keys = [
         "scan_success_rate",
         "vulnerability_correlation_precision",
+        "vulnerability_correlation_false_positive_rate",
         "drift_detection_precision",
         "drift_detection_recall",
         "drift_detection_f1",
+        "port_change_detection_precision",
+        "port_change_detection_recall",
+        "mean_time_to_detect_seconds",
         "alert_deduplication_rate",
         "prioritization_quality",
         "explainability_score",
@@ -73,10 +98,10 @@ def _metric_cards(metrics: dict, explainability_label: str) -> list:
     return [
         metric_tile(
             label_map[key],
-            _fmt_pct(metrics.get(key)),
+            formatter_map.get(key, _fmt_pct)(metrics.get(key)),
             icon=icon_map[key],
             tone=tone_map[key],
-            hint="Validation metric" if "drift" in key or "correlation" in key else "Evaluation signal",
+            hint="Validation metric" if any(token in key for token in ("drift", "correlation", "port_change", "detect")) or key == "mean_time_to_detect_seconds" else "Evaluation signal",
         )
         for key in ordered_keys
     ]
@@ -152,6 +177,32 @@ layout = dbc.Container(
             subtitle="A real plain-language summary generated from the controlled evaluation findings.",
             icon="bi-chat-square-text",
         ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    surface(
+                        html.Div(id="eval-stage-latency"),
+                        title="Pipeline stage latency breakdown",
+                        subtitle="Mean and standard deviation across the controlled evaluation runs.",
+                        icon="bi-bar-chart-steps",
+                        class_name="h-100",
+                    ),
+                    md=6,
+                    className="mt-4",
+                ),
+                dbc.Col(
+                    surface(
+                        html.Div(id="eval-explainability-breakdown"),
+                        title="Explainability by severity",
+                        subtitle="Coverage of complete plain-language explanations grouped by severity band.",
+                        icon="bi-chat-left-dots",
+                        class_name="h-100",
+                    ),
+                    md=6,
+                    className="mt-4",
+                ),
+            ]
+        ),
     ],
     fluid=True,
     className="py-2",
@@ -164,6 +215,8 @@ layout = dbc.Container(
     Output("eval-operational-cards", "children"),
     Output("eval-methodology", "children"),
     Output("eval-explainability", "children"),
+    Output("eval-stage-latency", "children"),
+    Output("eval-explainability-breakdown", "children"),
     Input("eval-tick", "n_intervals"),
     Input("eval-run-btn", "n_clicks"),
     prevent_initial_call=False,
@@ -195,7 +248,7 @@ def refresh_evaluation(_tick, run_clicks):
             icon="bi-clipboard-x",
         )
         status = action_notice or dbc.Alert("Backend not reachable. Start the API to load evaluation metrics.", color="danger")
-        return status, empty, empty, empty, empty
+        return status, empty, empty, empty, empty, empty, empty
 
     status_data = snapshot.get("status", {})
     validation = snapshot.get("validation") or {}
@@ -365,8 +418,67 @@ def refresh_evaluation(_tick, run_clicks):
             "Run the controlled evaluation to generate a real plain-language explanation sample from a seeded finding.",
             icon="bi-chat-square-text",
         )
+    latency_breakdown = (validation.get("evidence") or {}).get("stage_latency_breakdown", {}).get("summary", {})
+    if latency_breakdown:
+        latency_rows = [
+            html.Tr(
+                [
+                    html.Td(stage.replace("_", " ").replace("seconds", "").strip().title()),
+                    html.Td(_fmt_seconds(values.get("mean_seconds")), className="font-monospace"),
+                    html.Td(_fmt_seconds(values.get("std_seconds")), className="font-monospace"),
+                    html.Td(str(values.get("samples", 0)), className="font-monospace"),
+                ]
+            )
+            for stage, values in latency_breakdown.items()
+        ]
+        stage_latency = dbc.Table(
+            [
+                html.Thead(html.Tr([html.Th("Stage"), html.Th("Mean"), html.Th("Std Dev"), html.Th("Samples")])),
+                html.Tbody(latency_rows),
+            ],
+            bordered=False,
+            hover=True,
+            responsive=True,
+            className="mb-0",
+        )
+    else:
+        stage_latency = empty_state(
+            "No latency breakdown yet",
+            "Run the controlled evaluation to extract stage durations from timestamped scan logs.",
+            icon="bi-stopwatch",
+        )
 
-    return status_parts, validation_cards, operational_cards, methodology, explainability
+    explainability_breakdown = (validation.get("evidence") or {}).get("explainability_by_severity", {})
+    if explainability_breakdown:
+        severity_rows = [
+            html.Tr(
+                [
+                    html.Td(severity),
+                    html.Td(str(values.get("total_findings", 0)), className="font-monospace"),
+                    html.Td(str(values.get("complete_explanations", 0)), className="font-monospace"),
+                    html.Td(_fmt_pct(values.get("coverage")), className="font-monospace"),
+                ]
+            )
+            for severity, values in explainability_breakdown.items()
+        ]
+        explainability_by_severity = dbc.Table(
+            [
+                html.Thead(html.Tr([html.Th("Severity"), html.Th("Findings"), html.Th("Complete"), html.Th("Coverage")])),
+                html.Tbody(severity_rows),
+            ],
+            bordered=False,
+            hover=True,
+            responsive=True,
+            className="mb-0",
+        )
+    else:
+        explainability_by_severity = empty_state(
+            "No severity breakdown yet",
+            "Run the controlled evaluation to compute explanation completeness by severity band.",
+            icon="bi-chat-left-dots",
+        )
+
+    return status_parts, validation_cards, operational_cards, methodology, explainability, stage_latency, explainability_by_severity
 
 
 @dash.callback(

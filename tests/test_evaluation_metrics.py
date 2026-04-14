@@ -3,9 +3,11 @@ import uuid
 
 from backend.evaluation_metrics import (
     _alert_dedup_rate,
+    _explainability_by_severity,
     _diff_between_runs,
     _explainability_coverage,
     _prioritization_quality,
+    _reported_match_false_positive_rate,
 )
 from backend.db import SessionLocal
 from backend.models import Asset, Finding, ScanRun, Site
@@ -108,6 +110,7 @@ class EvaluationMetricTests(unittest.TestCase):
             }
         ]
         self.assertEqual(_explainability_coverage(findings), 100.0)
+        self.assertEqual(_explainability_by_severity(findings)["CRITICAL"]["coverage"], 100.0)
 
     def test_prioritization_quality_rewards_important_findings_at_top(self):
         findings = [
@@ -134,6 +137,11 @@ class EvaluationMetricTests(unittest.TestCase):
             },
         ]
         self.assertEqual(_prioritization_quality(findings), 100.0)
+
+    def test_reported_match_false_positive_rate_reflects_non_expected_cves(self):
+        reported = {"CVE-A", "CVE-B", "CVE-C"}
+        expected = {"CVE-A", "CVE-B"}
+        self.assertEqual(_reported_match_false_positive_rate(reported, expected), 33.33)
 
     def test_alert_dedup_rate_drops_when_duplicate_unresolved_alerts_exist(self):
         alerts = [

@@ -194,7 +194,7 @@ SERVICE_TO_CPE = {
 
 
 def _log(db: Session, run_id: str, msg: str, level: str = "INFO") -> None:
-    db.add(ScanLog(run_id=run_id, level=level, message=msg))
+    db.add(ScanLog(run_id=run_id, level=level, message=msg, ts=datetime.utcnow()))
     db.commit()
 
 

@@ -3,6 +3,7 @@ diff.py — compare consecutive scan runs for a site.
 Detects new/resolved findings, asset changes, and fires Alerts.
 """
 import json
+from datetime import datetime
 from sqlalchemy.orm import Session
 from .models import ScanRun, Asset, Finding, Alert
 from .prioritization import classify_priority_band
@@ -71,6 +72,7 @@ def _queue_alert(
             severity=severity,
             title=title,
             detail=detail,
+            created_at=datetime.utcnow(),
         )
     )
 
