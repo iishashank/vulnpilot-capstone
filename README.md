@@ -285,3 +285,10 @@ That validation covers:
 
 Only scan systems you own or have explicit written permission to test. The
 product is built for authorized monitoring and demo/lab use.
+
+## Contributors
+
+- Shashank Rallabandi
+- Jhanavi Shriwastava
+- Saanvi Santosh Kumar Sharma
+- Ria Maheshwari
